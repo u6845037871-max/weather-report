@@ -1,0 +1,135 @@
+name: PR Code Reviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read       # Needed for checkout
+  pull-requests: write # Needed to comment on PR
+  # statuses: write     # Uncomment if you want to mark PR as failing when rejected
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install root dependencies
+        run: |
+          npm install -g snyk
+          npm install
+
+      - name: Install CLI dependencies
+        run: |
+          cd code-reviewer
+          npm install
+
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
+
+      - name: Verify Snyk setup
+        run: snyk --version
+
+      - name: Run Snyk scan
+        run: |
+          snyk test --json > snyk-report.json || echo "Snyk scan failed"
+          echo "=== snyk-report.json status ==="
+          ls -l snyk-report.json || echo "No snyk-report.json created"
+
+      - name: Determine Operation Mode
+        id: determine_mode
+        run: |
+          MODE="loose"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+
+          MATCH=$(echo "$PR_TITLE$PR_BODY" | grep -oP '\[mode:\K(loose|strict|custom)(?=\])' | head -1)
+
+          if [ -n "$MATCH" ]; then
+              MODE="$MATCH"
+          fi
+          
+          echo "Selected Mode: $MODE"
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
+
+      - name: Run Code Reviewer
+        if: success() && hashFiles('snyk-report.json') != ''
+        id: runreview
+        run: |
+          MODE="${{ steps.determine_mode.outputs.mode }}"
+          output=$(node code-reviewer/cli.js --path . --mode $MODE)
+          
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload Snyk report as artifact
+        if: success() && hashFiles('snyk-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-report
+          path: snyk-report.json
+
+      - name: Comment on PR
+        if: success() && hashFiles('snyk-report.json') != ''
+        uses: actions/github-script@v7
+        id: pr_status_check
+        with:
+          script: |
+            const message = `${{ steps.runreview.outputs.content }}`;
+            const decision = message.includes("PR Decision: REJECT") ? "REJECT" : "APPROVE";
+
+            // Post the comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+
+            // Fail the job if the PR is rejected
+            if (decision === "REJECT") {
+              core.setFailed("PR failed automated code review.");
+            }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Snyk Code Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-code-report
+          path: code-reviewer/snyk-code-report.txt
+
+      - name: Comment with Snyk Code Report link
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = process.env.GITHUB_RUN_ID;
+            const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+            const artifactName = "snyk-code-report";
+            
+            const message = [
+              '📄 **Snyk Code Report Available**',
+              'You can download the latest report from the workflow artifacts:',
+              `👉 [Click here to view and download](${repoUrl}) (Artifact: \`${artifactName}\`)`
+            ].join('\n'); // Join with a newline character
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });

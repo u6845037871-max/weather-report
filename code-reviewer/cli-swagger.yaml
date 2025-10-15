@@ -1,0 +1,33 @@
+openapi: 3.0.0
+info:
+  title: CLI API
+  version: 1.0.0
+  description: API for running CLI operations.
+paths:
+  /run:
+    post:
+      summary: Run CLI command
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                projectPath:
+                  type: string
+                  description: Path to the project directory
+                  default: "."
+                mode:
+                  type: string
+                  description: Mode of operation
+                  default: "loose"
+      responses:
+        '200':
+          description: CLI run result
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid input or error

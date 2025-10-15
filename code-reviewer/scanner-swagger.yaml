@@ -1,0 +1,78 @@
+openapi: 3.0.0
+info:
+  title: Scanner API
+  version: 1.0.0
+  description: API for running Snyk code scans and retrieving vulnerability reports.
+paths:
+  /scan:
+    post:
+      summary: Run a Snyk code scan on a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                projectPath:
+                  type: string
+                  description: Path to the project directory to scan
+                  default: "."
+      responses:
+        '200':
+          description: Scan results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalVulnerabilities:
+                    type: integer
+                  vulnerabilities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        moduleName:
+                          type: string
+                        title:
+                          type: string
+                        cve:
+                          type: string
+                          nullable: true
+                        epss:
+                          type: number
+                          nullable: true
+                        percentile:
+                          type: number
+                          nullable: true
+                        cvss:
+                          type: number
+                          nullable: true
+                        severity:
+                          type: string
+                          nullable: true
+                        references:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              url:
+                                type: string
+                        metric:
+                          type: string
+                  severityCounts:
+                    type: object
+                    properties:
+                      critical:
+                        type: integer
+                      high:
+                        type: integer
+                      medium:
+                        type: integer
+                      low:
+                        type: integer
+                  reportFile:
+                    type: string
+        '400':
+          description: Invalid input or scan error

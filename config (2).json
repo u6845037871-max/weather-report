@@ -1,0 +1,17 @@
+{
+  "weights": {
+    "epss": 0.7,
+    "snyk": 0.30000000000000004
+  },
+  "thresholds": {
+    "avgThreshold": 1,
+    "criticalThreshold": 1,
+    "cvssCutoff": 10,
+    "severityCounts": {
+      "critical": 3,
+      "high": 2,
+      "medium": 8,
+      "low": null
+    }
+  }
+}
