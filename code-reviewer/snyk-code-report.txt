@@ -4,17 +4,17 @@ Testing . ...
 Open Issues
 
  ✗ [MEDIUM] Information Exposure - X-Powered-By Header
-   Finding ID: 51c9f1c2-23ed-4729-bb19-4b9da8dc18e3
+   Finding ID: 01d96834-60c5-45f7-9cbd-a8df7f5e7610
    Path: src/App.jsx, line 5
    Info: Disable X-Powered-By header for your Express app (consider using Helmet middleware), because it exposes information about the used framework to potential attackers.
 
  ✗ [MEDIUM] Allocation of Resources Without Limits or Throttling
-   Finding ID: 961936f0-a08d-4b96-8b41-fe52943a3d61
+   Finding ID: 8913a6fa-3e41-4d0c-a22f-f1d04a1814c0
    Path: src/App.jsx, line 9
    Info: Expensive operation (a system command execution) is performed by an endpoint handler which does not use a rate-limiting mechanism. It may enable the attackers to perform Denial-of-service attacks. Consider using a rate-limiting middleware such as express-limit.
 
  ✗ [HIGH] Command Injection
-   Finding ID: d219b9a3-b1c3-435b-b756-66fcea99dc04
+   Finding ID: 9ce55912-db32-4a8b-b1a6-5b34ed02128c
    Path: src/App.jsx, line 13
    Info: Unsanitized input from the HTTP request body flows into child_process.exec, where it is used to build a shell command. This may result in a Command Injection vulnerability.
 
