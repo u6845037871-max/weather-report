@@ -16,7 +16,7 @@
     "bootstrap": "^5.3.5",
     "jquery": "^2.2.4",
     "lodash": "^4.17.4",
-    "minimist": "^1.2.5",
+    "minimist": "^1.2.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.5.0"
