@@ -2,10 +2,10 @@ name: PR Code Reviewer
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
-  contents: read       # Needed for checkout
+  contents: read # Needed for checkout
   pull-requests: write # Needed to comment on PR
   # statuses: write     # Uncomment if you want to mark PR as failing when rejected
 
@@ -59,7 +59,7 @@ jobs:
           if [ -n "$MATCH" ]; then
               MODE="$MATCH"
           fi
-          
+
           echo "Selected Mode: $MODE"
           echo "mode=$MODE" >> $GITHUB_OUTPUT
 
@@ -69,7 +69,7 @@ jobs:
         run: |
           MODE="${{ steps.determine_mode.outputs.mode }}"
           output=$(node code-reviewer/cli.js --path . --mode $MODE)
-          
+
           echo "content<<EOF" >> $GITHUB_OUTPUT
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -120,13 +120,13 @@ jobs:
             const runId = process.env.GITHUB_RUN_ID;
             const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
             const artifactName = "snyk-code-report";
-            
+
             const message = [
               '📄 **Snyk Code Report Available**',
               'You can download the latest report from the workflow artifacts:',
               `👉 [Click here to view and download](${repoUrl}) (Artifact: \`${artifactName}\`)`
             ].join('\n'); // Join with a newline character
-            
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
