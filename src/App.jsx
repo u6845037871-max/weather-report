@@ -66,7 +66,7 @@ function App() {
     const city = cityName || query;
 
     if (!city.trim()) {
-      setError("Please enter a city name.Testing snyk code test #4");
+      setError("Please enter a city name.Testing");
       setShowCard(false);
       return;
     }
