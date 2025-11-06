@@ -66,7 +66,7 @@ function App() {
     const city = cityName || query;
 
     if (!city.trim()) {
-      setError("Please enter a city name.Testing 1");
+      setError("Please enter a city name.Testing");
       setShowCard(false);
       return;
     }
