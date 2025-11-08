@@ -218,7 +218,7 @@ export function runComparison(
       const count = counts[sev] || 0;
       const maxAllowed = thresholds[sev];
 
-      if (maxAllowed !== null && maxAllowed !== undefined && count >= maxAllowed) {
+      if (maxAllowed !== null && maxAllowed !== undefined && count > maxAllowed) {
         decision = "REJECT";
         rejectReason = `Too many ${sev.toUpperCase()} vulnerabilities: ${count} (max allowed ${maxAllowed})`;
         break;  // stop at first violation
