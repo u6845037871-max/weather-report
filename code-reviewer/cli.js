@@ -90,7 +90,7 @@ async function configure(modeOverride = null) {
     config.thresholds.avgThreshold = 0.0001;
     config.thresholds.criticalThreshold = 0.0001;
     config.thresholds.cvssCutoff = 1;
-    config.thresholds.severityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+    config.thresholds.severityCounts = { critical: 0, high: 1, medium: 2, low: 4 };
     console.log(chalk.red("Strict mode enabled, system will be very conservative."));
 
   } else if (normalizedMode === 'loose') {
