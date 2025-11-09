@@ -5,9 +5,8 @@ on:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
-  contents: read # Needed for checkout
+  contents: read       # Needed for checkout
   pull-requests: write # Needed to comment on PR
-  # statuses: write     # Uncomment if you want to mark PR as failing when rejected
 
 jobs:
   review:
@@ -41,11 +40,12 @@ jobs:
       - name: Verify Snyk setup
         run: snyk --version
 
-      - name: Run Snyk scan
+      #Run Snyk scan and generate both JSON + text reports
+      - name: Run Snyk scan (JSON + text)
         run: |
-          snyk test --json > snyk-report.json || echo "Snyk scan failed"
-          echo "=== snyk-report.json status ==="
-          ls -l snyk-report.json || echo "No snyk-report.json created"
+          snyk code test --json-file-output=snyk-report.json > snyk-code-report.txt || echo "Snyk scan failed"
+          echo "=== Generated Files ==="
+          ls -l snyk-code-report.txt snyk-report.json || echo "Missing one or more files"
 
       - name: Determine Operation Mode
         id: determine_mode
@@ -59,7 +59,7 @@ jobs:
           if [ -n "$MATCH" ]; then
               MODE="$MATCH"
           fi
-
+          
           echo "Selected Mode: $MODE"
           echo "mode=$MODE" >> $GITHUB_OUTPUT
 
@@ -69,17 +69,20 @@ jobs:
         run: |
           MODE="${{ steps.determine_mode.outputs.mode }}"
           output=$(node code-reviewer/cli.js --path . --mode $MODE)
-
+          
           echo "content<<EOF" >> $GITHUB_OUTPUT
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Upload Snyk report as artifact
-        if: success() && hashFiles('snyk-report.json') != ''
+      # Upload both Snyk reports together
+      - name: Upload Snyk reports as artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: snyk-report
-          path: snyk-report.json
+          name: snyk-reports
+          path: |
+            snyk-report.json
+            snyk-code-report.txt
 
       - name: Comment on PR
         if: success() && hashFiles('snyk-report.json') != ''
@@ -105,13 +108,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Snyk Code Report Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: snyk-code-report
-          path: code-reviewer/snyk-code-report.txt
-
       - name: Comment with Snyk Code Report link
         if: always()
         uses: actions/github-script@v7
@@ -119,14 +115,14 @@ jobs:
           script: |
             const runId = process.env.GITHUB_RUN_ID;
             const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
-            const artifactName = "snyk-code-report";
-
+            const artifactName = "snyk-reports";
+            
             const message = [
-              '📄 **Snyk Code Report Available**',
+              ' **Snyk Code Report Available**',
               'You can download the latest report from the workflow artifacts:',
-              `👉 [Click here to view and download](${repoUrl}) (Artifact: \`${artifactName}\`)`
-            ].join('\n'); // Join with a newline character
-
+              `[Click here to view and download](${repoUrl}) (Artifact: \`${artifactName}\`)`
+            ].join('\n');
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
