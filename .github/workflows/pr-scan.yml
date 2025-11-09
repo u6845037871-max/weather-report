@@ -125,7 +125,7 @@ jobs:
             const message = [
               '📄 **Snyk Code Report Available**',
               'You can download the latest report from the workflow artifacts:',
-              `👉 [Click here to view and download](${repoUrl}) (Artifact: \`${artifactName}\`)`
+              `👉 [Click here to view and download reports](${repoUrl})`
             ].join('\n'); // Join with a newline character
             
             await github.rest.issues.createComment({
