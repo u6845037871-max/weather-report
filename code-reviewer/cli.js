@@ -156,7 +156,7 @@ async function runReview() {
 
   console.log(chalk.yellow("Running scanner..."));
   const scanResult = await runScanner(path);
-  console.log("scanResult",scanResult);
+  //console.log("scanResult",scanResult);
   console.log(chalk.yellow("Comparing vulnerabilities..."));
   const { decision, reason, avgScore } = runComparison(
     "snyk-report.json",
