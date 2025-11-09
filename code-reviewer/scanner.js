@@ -226,7 +226,7 @@ export async function runScanner(projectPath = ".") {
 
   // Severity summary
   const severitySummary = `
-  Severity counts (CVSS fallback):
+  Severity counts (CVSS fallback) dependencies:
     Critical: ${severityCounts.critical}
     High:     ${severityCounts.high}
     Medium:   ${severityCounts.medium}
