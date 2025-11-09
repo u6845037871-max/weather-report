@@ -91,6 +91,26 @@ export async function runScanner(projectPath = ".") {
     throw new Error(`Could not find snyk-report.json in ${projectPath}`);
   }
 
+  const codeSeverityCounts = { high: 0, medium: 0, low: 0 };
+
+  if (fs.existsSync(snykCodeReportTxt)) {
+    const txt = fs.readFileSync(snykCodeReportTxt, "utf8");
+
+    // Match example: "Open issues:    13 [ 1 HIGH  8 MEDIUM  4 LOW ]"
+    const match = txt.match(/Open issues:\s*\d+\s*\[\s*(\d+)\s+HIGH\s+(\d+)\s+MEDIUM\s+(\d+)\s+LOW\s*\]/i);
+
+    if (match) {
+      codeSeverityCounts.high = parseInt(match[1], 10);
+      codeSeverityCounts.medium = parseInt(match[2], 10);
+      codeSeverityCounts.low = parseInt(match[3], 10);
+      console.log("✅ Extracted code severity counts from snyk-code-report.txt:", codeSeverityCounts);
+    } else {
+      console.warn("⚠️ Could not find 'Open issues' line in snyk-code-report.txt");
+    }
+  } else {
+    console.warn("⚠️ snyk-code-report.txt not found");
+  }
+
   const report = readJsonFile(snykFile);
   const vulnerabilities = report.vulnerabilities || [];
   if (!Array.isArray(vulnerabilities)) {
@@ -102,7 +122,7 @@ export async function runScanner(projectPath = ".") {
   const severityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
 
   // Prepare text report
-  const outputFile = path.join(projectPath, "epss-report.txt");
+  const outputFile = path.join(projectPath, "epss-report.txt"); 
 
   let reportContent = '';
 
@@ -223,9 +243,12 @@ export async function runScanner(projectPath = ".") {
   const finalResult = {
     totalVulnerabilities: result.length,
     vulnerabilities: result,
-    severityCounts,
+    codeSeverityCounts,
     reportFile: outputFile,
   };
+
+    // console.log("finalResult",finalResult);
+
 
   // Write JSON report in UTF-8
   // writeJsonFile(jsonOutputFile, finalResult);
