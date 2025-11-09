@@ -81,7 +81,7 @@ export function runComparison(
   // --- Load Snyk report using safe JSON reader ---
   const snykReport = readJsonFile(snykFile);
   const snykVulnerabilities = snykReport.vulnerabilities || [];
-
+  // console.log("scannerData",scannerData);
   // --- Build EPSS dictionary from scannerData ---
   const epssData = {};
   for (const vuln of scannerData.vulnerabilities) {
@@ -203,18 +203,12 @@ export function runComparison(
   //   }
   // }
 
-  // Rule 3: Average EPSS threshold
-  // if (decision === "ACCEPT" && avgScore > config.thresholds.avgThreshold) {
-  //   decision = "REJECT";
-  //   rejectReason = `Average EPSS too high (${avgScore.toFixed(6)})`;
-  // }
-
-  // 4. Reject if any severity exceeds threshold
+  // 3. Reject if any severity exceeds threshold
   if (decision === "ACCEPT") {
-    const counts = scannerData.severityCounts || {};
-    const thresholds = config.thresholds.severityCounts || {};
+    const counts = scannerData.codeSeverityCounts || {};
+    const thresholds = config.thresholds.codeSeverityCounts || {};
 
-    for (const sev of ['critical', 'high', 'medium', 'low']) {
+    for (const sev of ['high', 'medium', 'low']) {
       const count = counts[sev] || 0;
       const maxAllowed = thresholds[sev];
 
@@ -225,6 +219,13 @@ export function runComparison(
       }
     }
   }
+
+  // Rule 4: Average EPSS threshold
+  // if (decision === "ACCEPT" && avgScore > config.thresholds.avgThreshold) {
+  //   decision = "REJECT";
+  //   rejectReason = `Average EPSS too high (${avgScore.toFixed(6)})`;
+  // }
+
 
 
 
