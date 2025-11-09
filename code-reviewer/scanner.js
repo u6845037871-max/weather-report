@@ -1,4 +1,8 @@
+// scanner.js
 import fs from 'fs';
+import path from 'path';
+import { execSync } from "child_process";
+
 
 // --- Safe JSON reader to handle UTF-8 + BOM + CRLF issues ---
 function readJsonFile(filePath) {
@@ -56,209 +60,200 @@ function readJsonFile(filePath) {
   }
 }
 
-/**
- * Safely converts a value to a finite number, otherwise returns 0.
- * This avoids calling .toFixed on non-number values.
- */
-function numOrZero(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
+// --- Safe UTF-8 JSON writer ---
+function writeJsonFile(filePath, data) {
+  const jsonString = JSON.stringify(data, null, 2);
+  // Explicitly specify UTF-8 encoding
+  fs.writeFileSync(filePath, jsonString, { encoding: 'utf8' });
 }
 
-/**
- * Format a numeric value as a string with fixed decimals.
- */
-function fmt(value, decimals = 5) {
-  return numOrZero(value).toFixed(decimals);
-}
+// --- Exported function for CLI ---
+export async function runScanner(projectPath = ".") {
 
-export function runComparison(
-  snykFile = "snyk-report.json",
-  scannerData,
-  outputFile = "epss-plain-table.txt",
-  config
-) {
-  // --- Load Snyk report using safe JSON reader ---
-  const snykReport = readJsonFile(snykFile);
-  const snykVulnerabilities = snykReport.vulnerabilities || [];
-  // console.log("scannerData",scannerData);
-  // --- Build EPSS dictionary from scannerData ---
-  const epssData = {};
-  for (const vuln of scannerData.vulnerabilities) {
-    if (vuln.metric === "EPSS" && vuln.cve) {
-      epssData[vuln.cve] = {
-        epss: numOrZero(vuln.epss),
-        percentile: numOrZero(vuln.percentile)
-      };
+  // Ensure output directory exists
+  const outputDir = path.join(projectPath, "code-reviewer");
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+  const snykCodeReportTxt = path.join(outputDir, "snyk-code-report.txt");
+
+  try {
+    // Run Snyk Code Test and capture both stdout and stderr
+    const output = execSync(`snyk code test "${projectPath}"`, { encoding: "utf8" });
+    fs.writeFileSync(snykCodeReportTxt, output, { encoding: "utf8" });
+    console.log(`✅ Snyk code test completed and saved to ${snykCodeReportTxt}`);
+  } catch (error) {
+    // Write even if Snyk fails (it often returns non-zero on vulnerabilities)
+    fs.writeFileSync(snykCodeReportTxt, error.stdout || error.message, { encoding: "utf8" });
+  }
+  // Load Snyk report
+  const snykFile = path.join(projectPath, "snyk-report.json");
+  if (!fs.existsSync(snykFile)) {
+    throw new Error(`Could not find snyk-report.json in ${projectPath}`);
+  }
+
+  const codeSeverityCounts = { high: 0, medium: 0, low: 0 };
+
+  if (fs.existsSync(snykCodeReportTxt)) {
+    const txt = fs.readFileSync(snykCodeReportTxt, "utf8");
+
+    // Match example: "Open issues:    13 [ 1 HIGH  8 MEDIUM  4 LOW ]"
+    const match = txt.match(/Open issues:\s*\d+\s*\[\s*(\d+)\s+HIGH\s+(\d+)\s+MEDIUM\s+(\d+)\s+LOW\s*\]/i);
+
+    if (match) {
+      codeSeverityCounts.high = parseInt(match[1], 10);
+      codeSeverityCounts.medium = parseInt(match[2], 10);
+      codeSeverityCounts.low = parseInt(match[3], 10);
+      console.log("✅ Extracted code severity counts from snyk-code-report.txt:", codeSeverityCounts);
+    } else {
+      console.warn("⚠️ Could not find 'Open issues' line in snyk-code-report.txt");
+    }
+  } else {
+    console.warn("⚠️ snyk-code-report.txt not found");
+  }
+
+  const report = readJsonFile(snykFile);
+  const vulnerabilities = report.vulnerabilities || [];
+  if (!Array.isArray(vulnerabilities)) {
+    throw new Error("Expected snyk-report.json to contain vulnerabilities array.");
+  }
+  // console.log('vulnerabilities', vulnerabilities);
+  const seenCVEs = new Set();
+  const result = [];
+  const severityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+
+  // Prepare text report
+  const outputFile = path.join(projectPath, "epss-report.txt"); 
+
+  let reportContent = '';
+
+  // Fetch EPSS for each CVE
+  async function fetchEPSS(cve) {
+    if (!cve) return null; // no CVE = no EPSS
+    try {
+      const url = `https://api.first.org/data/v1/epss?cve=${cve}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      return data.data?.[0] || null;
+    } catch (err) {
+      console.error(`❌ Failed to fetch EPSS for ${cve}:`, err.message);
+      return null;
     }
   }
 
-  // --- Build Snyk dictionary ---
-  const snykData = {};
-  for (const vuln of snykVulnerabilities) {
+  let totalVulnerabilities = 0;
+
+  // classify CVSS into severity
+  function classifyCVSS(score) {
+    if (score === null || score === undefined) return null;
+    if (score >= 9.0) return "critical";
+    if (score >= 7.0) return "high";
+    if (score >= 4.0) return "medium";
+    return "low";
+  }
+  // console.log("vulnerabilities", vulnerabilities);
+  for (const vuln of vulnerabilities) {
     const cves = vuln.identifiers?.CVE || [];
-    for (const cve of cves) {
-      snykData[cve] = {
-        cvss: numOrZero(vuln.cvssSources?.[0]?.baseScore),
-        probability: numOrZero(vuln.epssDetails?.probability),
-        percentile: numOrZero(vuln.epssDetails?.percentile)
-      };
-    }
-  }
-  // console.log("snykData", snykData);
+    const cvssScore = vuln.cvssSources?.[0]?.baseScore || null;
+    const targets = cves.length > 0 ? cves : [null];
 
-  //  --- Collect rows as formatted strings (safe numeric formatting) ---
-  const rows = [];
-  let totalScore = 0;
-  let count = 0;
-  // console.log("scannerData", scannerData);
-  for (const vuln of scannerData.vulnerabilities || []) {
-    if (!vuln.cve) continue;
+    for (const cve of targets) {
+      if (cve && seenCVEs.has(cve)) continue;
+      if (cve) seenCVEs.add(cve);
+      totalVulnerabilities++;
 
-    const cve = String(vuln.cve);
-    const e = epssData[cve] || {};
-    const s = snykData[cve] || {};
+      const epssData = await fetchEPSS(cve);
 
-    const epssScore = e.epss || 0;
-    const epssPercentile = e.percentile || 0;
-    const snykProb = s.probability || 0;
-    const snykPercentile = s.percentile || 0;
+      let severity;
+      let metricUsed;
+      let epssScore = epssData ? parseFloat(epssData.epss) : null;
 
-    const cvss = vuln?.cvss || "-";
-
-    const vulnScore = config.weights.epss * epssScore + config.weights.snyk * snykProb;
-    totalScore += vulnScore;
-    count++;
-
-    rows.push([
-      cve,
-      fmt(snykPercentile, 5),
-      fmt(epssPercentile, 5),
-      fmt(snykProb, 5),
-      fmt(epssScore, 5),
-      numOrZero(vulnScore).toFixed(6),
-      cvss
-    ]);
-  }
-
-  // --- Build dynamic table ---
-  const headers = [
-    "CVE",
-    "Snyk %",
-    "EPSS % (Percentile)",
-    "Snyk Prob",
-    "EPSS Score",
-    "Vulnerability Score",
-    "CVSS"
-  ];
-
-  // Compute column widths (use header length and each row's string lengths)
-  const colWidths = headers.map((h, i) => {
-    const maxInRows = rows.length
-      ? Math.max(...rows.map(r => String(r[i] ?? "").length))
-      : 0;
-    return Math.max(h.length, maxInRows);
-  });
-
-  const formatRow = (row) =>
-    row.map((cell, i) => String(cell ?? "").padEnd(colWidths[i])).join(" | ");
-
-  const separator = colWidths.map(w => "-".repeat(w)).join("-|-");
-
-  const table =
-    formatRow(headers) +
-    "\n" +
-    separator +
-    "\n" +
-    rows.map(formatRow).join("\n");
-
-
-  // --- Decision logic ---
-  const avgScore = count > 0 ? totalScore / count : 0;
-  let decision = "ACCEPT";
-  let rejectReason = "";
-  // console.log("rows", rows);
-  // console.log("rows[0]", rows[0]);
-
-  // for (const row of rows) {
-  //   const vulnScore = parseFloat(row[5]);   // Vulnerability Score
-  //   const epssScore = parseFloat(row[4]);   // EPSS Score column
-  //   const cvssScore = parseFloat(row[6]);   // CVSS column (may be "-")
-  //   console.log("vulnScore", vulnScore);
-  //   // Rule 1: Critical vulnerability score
-  //   if (vulnScore > config.thresholds.criticalThreshold) {
-  //     decision = "REJECT";
-  //     rejectReason = `High Vulnerability Score (combined metric) on CVE: ${row[0]}`;
-  //     break;
-  //   }
-
-  //   // Rule 2: EPSS + CVSS cutoff
-  //   if (
-  //     vulnScore > config.thresholds.avgThreshold &&
-  //     cvssScore > config.thresholds.cvssCutoff
-  //   ) {
-  //     decision = "REJECT";
-  //     rejectReason = `EPSS (${vulnScore}) and CVSS (${cvssScore}) too high for CVE: ${row[0]}`;
-  //     break;
-  //   }
-  // }
-
-  // 3. Reject if any severity exceeds threshold
-  if (decision === "ACCEPT") {
-    const counts = scannerData.codeSeverityCounts || {};
-    const thresholds = config.thresholds.codeSeverityCounts || {};
-
-    for (const sev of ['high', 'medium', 'low']) {
-      const count = counts[sev] || 0;
-      const maxAllowed = thresholds[sev];
-
-      if (maxAllowed !== null && maxAllowed !== undefined && count > maxAllowed) {
-        decision = "REJECT";
-        rejectReason = `Too many ${sev.toUpperCase()} vulnerabilities: ${count} (max allowed ${maxAllowed})`;
-        break;  // stop at first violation
+      if (epssScore !== null && !isNaN(epssScore)) {
+        // --- EPSS-based classification ---
+        if (epssScore >= 0.5) severity = "critical";
+        else if (epssScore >= 0.3) severity = "high";
+        else if (epssScore >= 0.1) severity = "medium";
+        else severity = "low";
+        metricUsed = "EPSS";
+      } else {
+        // --- CVSS fallback ---
+        severity = classifyCVSS(cvssScore);
+        metricUsed = "CVSS";
       }
+
+      if (severity) severityCounts[severity]++;
+
+      // --- Report text formatting ---
+      if (metricUsed === "EPSS") {
+        reportContent += `
+✗ [${severity.toUpperCase()}] ${vuln.title}
+   Package: ${vuln.moduleName} (${vuln.version})
+   CVE: ${cve || "N/A"}
+   EPSS Score: ${epssData.epss} | Percentile: ${epssData.percentile}
+   CVSS Score: ${vuln.cvssScore || "N/A"}
+   🔗 ${vuln.references[0]?.url || "No reference"}
+   ------------------------------------------------
+`;
+      } else {
+        reportContent += `
+✗ [${severity.toUpperCase()}] ${vuln.title}
+   Package: ${vuln.moduleName} (${vuln.version})
+   CVE: ${cve || "N/A"}
+   CVSS Score: ${cvssScore || "N/A"} → Severity: ${severity}
+   🔗 ${vuln.references[0]?.url || "No reference"}
+   ------------------------------------------------
+`;
+      }
+
+      result.push({
+        moduleName: vuln.moduleName,
+        title: vuln.title,
+        cve,
+        epss: epssData?.epss || null,
+        percentile: epssData?.percentile || null,
+        cvss: cvssScore,
+        severity,
+        references: vuln.references || [],
+        metric: metricUsed,
+      });
     }
   }
 
-  // Rule 4: Average EPSS threshold
-  // if (decision === "ACCEPT" && avgScore > config.thresholds.avgThreshold) {
-  //   decision = "REJECT";
-  //   rejectReason = `Average EPSS too high (${avgScore.toFixed(6)})`;
-  // }
 
+  // Summary
+  // const summary = `\n🔴 Total vulnerabilities found: ${totalVulnerabilities}\n`;
+  // console.log(summary);
+  // reportContent += summary;
 
-
-
-  let reportContent = `Digital PR Code Review Report
-  ==============================
-
-  Total vulnerabilities: ${count}
-  Average Vulnerability Score: ${avgScore.toFixed(6)}
-
-  Explanation: 
-  The average vulnerability score is a weighted combination of EPSS (Exploit Prediction Scoring System) probability
-  and Snyk-reported probability for all detected vulnerabilities in this PR.
-  It represents the overall risk level: higher values indicate higher likelihood of exploitation.
-
-  PR Decision: ${decision}
-  Reason: ${rejectReason || 'N/A'}
-  avgThreshold: ${config.thresholds.avgThreshold}
+  // Severity summary
+  const severitySummary = `
+  Severity counts (CVSS fallback):
+    Critical: ${severityCounts.critical}
+    High:     ${severityCounts.high}
+    Medium:   ${severityCounts.medium}
+    Low:      ${severityCounts.low}
   `;
-  let finalReport = "final PR report.txt";
-  // Optional: append the detailed table
-  reportContent += "\n\n" + table;
+  console.log(severitySummary);
+  reportContent += severitySummary;
 
-  // Write to file with explicit UTF-8 encoding
-  if (finalReport) {
-    fs.writeFileSync(finalReport, reportContent, { encoding: 'utf-8' });
-    console.log(`✅ Digital PR report saved to ${finalReport}`);
-  }
+  // Write text report (explicitly UTF-8)
+  fs.writeFileSync(outputFile, reportContent, { encoding: 'utf8' });
+  console.log(`✅ EPSS report saved to ${outputFile}`);
 
-  // --- Write table to file with explicit UTF-8 encoding ---
-  if (outputFile) {
-    fs.writeFileSync(outputFile, table, { encoding: 'utf-8' });
-    console.log(`✅ Plain text comparison table saved to ${outputFile}`);
-  }
+  // Create the final result object
+  const finalResult = {
+    totalVulnerabilities: result.length,
+    vulnerabilities: result,
+    codeSeverityCounts,
+    reportFile: outputFile,
+  };
 
-  return { decision, reason: rejectReason, avgScore, table };
+    // console.log("finalResult",finalResult);
+
+
+  // Write JSON report in UTF-8
+  // writeJsonFile(jsonOutputFile, finalResult);
+  // console.log(`✅ JSON report saved to ${jsonOutputFile} (UTF-8 encoding)`);
+
+  // Return JSON for CLI
+  return finalResult;
 }
