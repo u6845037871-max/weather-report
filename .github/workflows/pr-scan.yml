@@ -44,8 +44,9 @@ jobs:
       - name: Run Snyk scan
         run: |
           snyk test --json > snyk-report.json || echo "Snyk scan failed"
-          echo "=== snyk-report.json status ==="
-          ls -l snyk-report.json || echo "No snyk-report.json created"
+          snyk code test . > code-reviewer/snyk-code-report.txt || echo "Snyk Code test failed"
+          echo "=== snyk-code-report.txt content preview ==="
+          head -n 20 code-reviewer/snyk-code-report.txt
 
       - name: Determine Operation Mode
         id: determine_mode
