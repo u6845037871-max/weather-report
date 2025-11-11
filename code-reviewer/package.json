@@ -23,7 +23,7 @@
     "cli-table3": "^0.6.5",
     "dotenv": "^17.2.2",
     "inquirer": "^12.9.6",
-    "openai": "^5.20.3",
+    "openai": "^5.23.2",
     "probot": "^13.0.1"
   },
   "devDependencies": {
